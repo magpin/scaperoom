@@ -9,23 +9,34 @@ ALTER TABLE players ENABLE ROW LEVEL SECURITY;
 ALTER TABLE player_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attempts ENABLE ROW LEVEL SECURITY;
 
+-- Otorgar permisos explicitos a roles anon y authenticated
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE rooms TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE players TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE player_progress TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE attempts TO anon, authenticated;
+
 -- ============================================================
 -- 2. POLICIES PARA TABLA "rooms"
 -- ============================================================
 
 -- Permitir crear sala sin autenticación
+DROP POLICY IF EXISTS "allow_create_room_anonymous" ON rooms;
 CREATE POLICY "allow_create_room_anonymous" ON rooms
   FOR INSERT WITH CHECK (true);
 
 -- Permitir leer todas las salas (public)
+DROP POLICY IF EXISTS "allow_read_rooms" ON rooms;
 CREATE POLICY "allow_read_rooms" ON rooms
   FOR SELECT USING (true);
 
 -- Permitir actualizar sala (cualquiera puede, por ahora - refinar si es necesario)
+DROP POLICY IF EXISTS "allow_update_rooms" ON rooms;
 CREATE POLICY "allow_update_rooms" ON rooms
   FOR UPDATE USING (true);
 
 -- Permitir eliminar sala (refinar si necesario)
+DROP POLICY IF EXISTS "allow_delete_rooms" ON rooms;
 CREATE POLICY "allow_delete_rooms" ON rooms
   FOR DELETE USING (true);
 
@@ -34,18 +45,22 @@ CREATE POLICY "allow_delete_rooms" ON rooms
 -- ============================================================
 
 -- Permitir crear jugador sin auth
+DROP POLICY IF EXISTS "allow_create_player" ON players;
 CREATE POLICY "allow_create_player" ON players
   FOR INSERT WITH CHECK (true);
 
 -- Permitir leer jugadores de cualquier sala
+DROP POLICY IF EXISTS "allow_read_players" ON players;
 CREATE POLICY "allow_read_players" ON players
   FOR SELECT USING (true);
 
 -- Permitir actualizar jugador desde cliente
+DROP POLICY IF EXISTS "allow_update_player" ON players;
 CREATE POLICY "allow_update_player" ON players
   FOR UPDATE USING (true);
 
 -- Permitir eliminar jugador
+DROP POLICY IF EXISTS "allow_delete_player" ON players;
 CREATE POLICY "allow_delete_player" ON players
   FOR DELETE USING (true);
 
@@ -54,14 +69,17 @@ CREATE POLICY "allow_delete_player" ON players
 -- ============================================================
 
 -- Permitir crear progreso
+DROP POLICY IF EXISTS "allow_create_progress" ON player_progress;
 CREATE POLICY "allow_create_progress" ON player_progress
   FOR INSERT WITH CHECK (true);
 
 -- Permitir leer progreso
+DROP POLICY IF EXISTS "allow_read_progress" ON player_progress;
 CREATE POLICY "allow_read_progress" ON player_progress
   FOR SELECT USING (true);
 
 -- Permitir actualizar progreso
+DROP POLICY IF EXISTS "allow_update_progress" ON player_progress;
 CREATE POLICY "allow_update_progress" ON player_progress
   FOR UPDATE USING (true);
 
@@ -70,10 +88,12 @@ CREATE POLICY "allow_update_progress" ON player_progress
 -- ============================================================
 
 -- Permitir insertar intentos
+DROP POLICY IF EXISTS "allow_create_attempt" ON attempts;
 CREATE POLICY "allow_create_attempt" ON attempts
   FOR INSERT WITH CHECK (true);
 
 -- Permitir leer intentos
+DROP POLICY IF EXISTS "allow_read_attempt" ON attempts;
 CREATE POLICY "allow_read_attempt" ON attempts
   FOR SELECT USING (true);
 

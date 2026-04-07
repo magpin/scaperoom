@@ -42,22 +42,58 @@ type LocalDatabase = {
 }
 
 const STORAGE_KEY = 'escape_room_local_db'
+let memoryDbFallback: LocalDatabase = { rooms: [], players: [], progress: [] }
+
+function readStorage(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeStorage(value: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, value)
+  } catch {
+    // Ignore storage write errors and keep memory fallback as source of truth.
+  }
+}
 
 function loadLocalDb(): LocalDatabase {
-  const raw = localStorage.getItem(STORAGE_KEY)
+  const raw = readStorage()
   if (!raw) {
-    return { rooms: [], players: [], progress: [] }
+    return {
+      rooms: [...memoryDbFallback.rooms],
+      players: [...memoryDbFallback.players],
+      progress: [...memoryDbFallback.progress],
+    }
   }
 
   try {
-    return JSON.parse(raw) as LocalDatabase
+    const parsed = JSON.parse(raw) as LocalDatabase
+    memoryDbFallback = {
+      rooms: [...parsed.rooms],
+      players: [...parsed.players],
+      progress: [...parsed.progress],
+    }
+    return parsed
   } catch {
-    return { rooms: [], players: [], progress: [] }
+    return {
+      rooms: [...memoryDbFallback.rooms],
+      players: [...memoryDbFallback.players],
+      progress: [...memoryDbFallback.progress],
+    }
   }
 }
 
 function saveLocalDb(db: LocalDatabase): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+  memoryDbFallback = {
+    rooms: [...db.rooms],
+    players: [...db.players],
+    progress: [...db.progress],
+  }
+  writeStorage(JSON.stringify(db))
 }
 
 function createLocalRoomWithHost(hostName: string): { room: RoomSession; host: RoomPlayer } {
@@ -266,7 +302,11 @@ export async function createRoomWithHost(hostName: string): Promise<{
       },
     }
   } catch {
-    return createLocalRoomWithHost(normalizedHost)
+    try {
+      return createLocalRoomWithHost(normalizedHost)
+    } catch {
+      throw new Error('No fue posible crear la sala en Supabase ni en modo local.')
+    }
   }
 }
 
@@ -339,7 +379,11 @@ export async function joinRoomByCode(roomCode: string, playerName: string): Prom
       },
     }
   } catch {
-    return joinLocalRoomByCode(normalizedCode, normalizedName)
+    try {
+      return joinLocalRoomByCode(normalizedCode, normalizedName)
+    } catch {
+      throw new Error('No fue posible unirse a la sala en Supabase ni en modo local.')
+    }
   }
 }
 
