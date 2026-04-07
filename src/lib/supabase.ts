@@ -4,7 +4,7 @@ import type { PlayerProgressPayload, RoomPlayer, RoomSession } from '../types/ga
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
-const SUPABASE_REQUEST_TIMEOUT_MS = 12000
+const SUPABASE_REQUEST_TIMEOUT_MS = 2500
 
 const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey)
 
