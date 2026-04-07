@@ -301,12 +301,9 @@ export async function createRoomWithHost(hostName: string): Promise<{
         completed: playerData.completed,
       },
     }
-  } catch {
-    try {
-      return createLocalRoomWithHost(normalizedHost)
-    } catch {
-      throw new Error('No fue posible crear la sala en Supabase ni en modo local.')
-    }
+  } catch (error) {
+    const details = error instanceof Error ? error.message : 'error desconocido'
+    throw new Error(`No fue posible crear la sala en Supabase (${details}). Verifica RLS/permisos y variables VITE_* en Vercel.`)
   }
 }
 
@@ -378,12 +375,9 @@ export async function joinRoomByCode(roomCode: string, playerName: string): Prom
         completed: playerData.completed,
       },
     }
-  } catch {
-    try {
-      return joinLocalRoomByCode(normalizedCode, normalizedName)
-    } catch {
-      throw new Error('No fue posible unirse a la sala en Supabase ni en modo local.')
-    }
+  } catch (error) {
+    const details = error instanceof Error ? error.message : 'error desconocido'
+    throw new Error(`No se pudo unir en Supabase (${details}). Si la sala fue creada en modo local, solo existe en el navegador del anfitrion.`)
   }
 }
 
