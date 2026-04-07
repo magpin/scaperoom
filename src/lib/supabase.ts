@@ -492,3 +492,146 @@ export async function saveProgress(payload: PlayerProgressPayload): Promise<void
     saveLocalProgress(payload)
   }
 }
+
+// ============================================================
+// REALTIME SUBSCRIPTIONS
+// ============================================================
+
+type RoomChangeCallback = (payload: any) => void
+type PlayerChangeCallback = (payload: any) => void
+
+const activeSubscriptions = new Map<string, any>()
+
+/**
+ * Suscribirse a cambios en tiempo real de una sala (status, jugadores)
+ * Se dispara cuando cambia room.status o se agregan/modifican jugadores
+ */
+export function subscribeToRoomChanges(
+  roomId: string,
+  onRoomChange: RoomChangeCallback,
+  onPlayersChange: PlayerChangeCallback,
+): () => void {
+  if (!supabase) {
+    console.warn('Supabase no configurado, realtime no disponible')
+    return () => {}
+  }
+
+  const key = `room-${roomId}`
+
+  // Si ya existe suscripción, retorna función para desuscribirse
+  if (activeSubscriptions.has(key)) {
+    return () => {
+      const sub = activeSubscriptions.get(key)
+      if (sub) {
+        supabase.removeChannel(sub)
+        activeSubscriptions.delete(key)
+      }
+    }
+  }
+
+  // Crear channel para cambios en rooms y players
+  const channel = supabase
+    .channel(`room:${roomId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'rooms',
+        filter: `room_id=eq.${roomId}`,
+      },
+      (payload) => {
+        console.log('[Realtime] Room cambió:', payload)
+        onRoomChange(payload)
+      },
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'players',
+        filter: `room_id=eq.${roomId}`,
+      },
+      (payload) => {
+        console.log('[Realtime] Players cambió:', payload)
+        onPlayersChange(payload)
+      },
+    )
+    .subscribe((status) => {
+      console.log(`[Realtime] Subscription status: ${status}`)
+    })
+
+  activeSubscriptions.set(key, channel)
+
+  // Retornar función desuscripción
+  return () => {
+    if (supabase && activeSubscriptions.has(key)) {
+      supabase.removeChannel(channel)
+      activeSubscriptions.delete(key)
+    }
+  }
+}
+
+/**
+ * Suscribirse a cambios de progreso de un jugador
+ */
+export function subscribeToProgressChanges(
+  playerId: string,
+  roomId: string,
+  callback: (payload: any) => void,
+): () => void {
+  if (!supabase) {
+    return () => {}
+  }
+
+  const key = `progress-${playerId}-${roomId}`
+
+  if (activeSubscriptions.has(key)) {
+    return () => {
+      const sub = activeSubscriptions.get(key)
+      if (sub) {
+        supabase.removeChannel(sub)
+        activeSubscriptions.delete(key)
+      }
+    }
+  }
+
+  const channel = supabase
+    .channel(`progress:${playerId}:${roomId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'player_progress',
+        filter: `player_id=eq.${playerId}`,
+      },
+      (payload) => {
+        console.log('[Realtime] Progress cambió:', payload)
+        callback(payload)
+      },
+    )
+    .subscribe()
+
+  activeSubscriptions.set(key, channel)
+
+  return () => {
+    if (supabase && activeSubscriptions.has(key)) {
+      supabase.removeChannel(channel)
+      activeSubscriptions.delete(key)
+    }
+  }
+}
+
+/**
+ * Limpiar todas las suscripciones (para cuando el usuario sale de la sala)
+ */
+export function unsubscribeFromAll(): void {
+  activeSubscriptions.forEach((channel) => {
+    if (supabase) {
+      supabase.removeChannel(channel)
+    }
+  })
+  activeSubscriptions.clear()
+}

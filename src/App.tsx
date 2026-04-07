@@ -8,6 +8,8 @@ import {
   persistenceMode,
   saveProgress,
   startRoom,
+  subscribeToRoomChanges,
+  unsubscribeFromAll,
 } from './lib/supabase'
 import { buildFinalCode } from './utils/codes'
 import { secondsBetween } from './utils/timing'
@@ -78,6 +80,15 @@ function App() {
 
   const finalCode = useMemo(() => buildFinalCode(keyFragments), [keyFragments])
 
+  // Cleanup effect: desuscribirse de realtime cuando sale de lobby
+  useEffect(() => {
+    return () => {
+      if (screen !== 'lobby') {
+        unsubscribeFromAll()
+      }
+    }
+  }, [screen])
+
   // Live timer effect
   useEffect(() => {
     if (!gameStartedAt || screen === 'result') {
@@ -92,7 +103,7 @@ function App() {
     return () => clearInterval(interval)
   }, [gameStartedAt, screen])
 
-  // Lobby sync effect
+  // Lobby sync effect - usando Realtime subscriptions
   useEffect(() => {
     if (!room || screen !== 'lobby') {
       return
@@ -100,41 +111,68 @@ function App() {
 
     let cancelled = false
 
-    const syncLobby = async () => {
-      try {
-        const [roomStatus, members] = await Promise.all([
-          getRoomStatus(room.roomId),
-          listPlayers(room.roomId),
-        ])
+    // Suscribirse a cambios realtime
+    const unsubscribe = subscribeToRoomChanges(
+      room.roomId,
+      (roomPayload) => {
+        // Cambio en la sala (status, otros campos)
+        if (roomPayload.eventType === 'UPDATE' && roomPayload.new) {
+          if (!cancelled) {
+            const newStatus = roomPayload.new.status
+            setRoom((prev) => (prev ? { ...prev, status: newStatus } : prev))
 
-        if (cancelled) {
-          return
-        }
-
-        setPlayers(members)
-        setRoom((prev) => (prev ? { ...prev, status: roomStatus } : prev))
-
-        if (roomStatus === 'in_progress' && !player?.isHost) {
-          setScreen('story')
-          if (!gameStartedAt) {
-            setGameStartedAt(new Date().toISOString())
+            // Si otro jugador está iniciando la partida, actualizar pantalla
+            if (newStatus === 'in_progress' && !player?.isHost) {
+              setScreen('story')
+              if (!gameStartedAt) {
+                setGameStartedAt(new Date().toISOString())
+              }
+            }
           }
         }
-      } catch {
+      },
+      () => {
+        // Cambio en jugadores (alguien entró o salió)
         if (!cancelled) {
-          setErrorMessage('No fue posible sincronizar el lobby en este momento.')
+          void listPlayers(room.roomId).then((members) => {
+            setPlayers(members)
+          })
+        }
+      },
+    )
+
+    // Fallback a polling si Realtime no es confiable (cada 3s)
+    const pollingInterval = window.setInterval(async () => {
+      if (!cancelled) {
+        try {
+          const [roomStatus, members] = await Promise.all([
+            getRoomStatus(room.roomId),
+            listPlayers(room.roomId),
+          ])
+
+          if (cancelled) return
+
+          setPlayers(members)
+          setRoom((prev) => (prev ? { ...prev, status: roomStatus } : prev))
+
+          if (roomStatus === 'in_progress' && !player?.isHost) {
+            setScreen('story')
+            if (!gameStartedAt) {
+              setGameStartedAt(new Date().toISOString())
+            }
+          }
+        } catch {
+          if (!cancelled) {
+            setErrorMessage('No fue posible sincronizar el lobby en este momento.')
+          }
         }
       }
-    }
-
-    void syncLobby()
-    const timer = window.setInterval(() => {
-      void syncLobby()
     }, 3000)
 
     return () => {
       cancelled = true
-      window.clearInterval(timer)
+      window.clearInterval(pollingInterval)
+      unsubscribe()
     }
   }, [room, screen, player, gameStartedAt])
 

@@ -1,0 +1,7 @@
+Fallo Principal: Error en la Persistencia y Sincronización
+Al intentar crear la sala, la aplicación se queda bloqueada o no logra procesar la transición al "Lobby". Esto se debe a varios factores técnicos visibles:
+Persistencia Local Inadecuada: La web indica que utiliza "PERSISTENCIA: LOCAL". Esto sugiere que intenta gestionar el estado de la sala (que es una funcionalidad inherentemente multiusuario) utilizando únicamente el almacenamiento del navegador (LocalStorage o SessionStorage).
+Falta de Backend/WebSockets: Un "Escape Room" virtual requiere sincronización en tiempo real entre jugadores. Al no haber un servidor de señales (como Socket.io o una base de datos en tiempo real tipo Firebase/Supabase), la acción de "Crear Sala" no genera un identificador válido que otros puedan usar, provocando que el proceso de creación se quede en un "bucle" o simplemente no responda.
+Error de Navegación: Durante las pruebas, la página llegó a quedar en blanco o a no responder (PageDeadError), lo que indica una excepción no controlada en el código de React/JavaScript al intentar ejecutar la lógica de creación de la sala.
+Conclusión: La web es actualmente un "cascarón" visual. La lógica de red para crear y gestionar salas no está implementada o está desconectada, lo que impide que cualquier usuario pase de la pantalla de configuración inicial.
+
