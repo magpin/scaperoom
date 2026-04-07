@@ -4,9 +4,11 @@ import type { PlayerProgressPayload, RoomPlayer, RoomSession } from '../types/ga
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+const backendUrl = import.meta.env.VITE_BACKEND_URL as string | undefined
 const SUPABASE_REQUEST_TIMEOUT_MS = 2500
 
 const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey)
+const hasBackendConfig = Boolean(backendUrl)
 
 function withTimeout<T>(promiseLike: PromiseLike<T>, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -24,6 +26,39 @@ function withTimeout<T>(promiseLike: PromiseLike<T>, label: string): Promise<T> 
         reject(error)
       })
   })
+}
+
+async function backendRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!backendUrl) {
+    throw new Error('VITE_BACKEND_URL no configurado')
+  }
+
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), SUPABASE_REQUEST_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(`${backendUrl}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers ?? {}),
+      },
+      signal: controller.signal,
+    })
+
+    const payload = (await response.json()) as { error?: string }
+
+    if (!response.ok) {
+      throw new Error(payload.error || `Backend error ${response.status}`)
+    }
+
+    return payload as T
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error de red con backend'
+    throw new Error(message)
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 const supabase = hasSupabaseConfig
@@ -230,7 +265,7 @@ function saveLocalProgress(payload: PlayerProgressPayload): void {
 }
 
 export function persistenceMode(): 'supabase' | 'local' {
-  return hasSupabaseConfig ? 'supabase' : 'local'
+  return hasSupabaseConfig || hasBackendConfig ? 'supabase' : 'local'
 }
 
 export async function createRoomWithHost(hostName: string): Promise<{
@@ -240,6 +275,14 @@ export async function createRoomWithHost(hostName: string): Promise<{
   const normalizedHost = hostName.trim()
   if (!normalizedHost) {
     throw new Error('El nombre del anfitrion es obligatorio.')
+  }
+
+  if (hasBackendConfig) {
+    const response = await backendRequest<{ room: RoomSession; host: RoomPlayer }>('/rooms/create', {
+      method: 'POST',
+      body: JSON.stringify({ hostName: normalizedHost }),
+    })
+    return response
   }
 
   if (!supabase) {
@@ -318,6 +361,14 @@ export async function joinRoomByCode(roomCode: string, playerName: string): Prom
     throw new Error('Debes ingresar codigo y nombre.')
   }
 
+  if (hasBackendConfig) {
+    const response = await backendRequest<{ room: RoomSession; player: RoomPlayer }>('/rooms/join', {
+      method: 'POST',
+      body: JSON.stringify({ roomCode: normalizedCode, playerName: normalizedName }),
+    })
+    return response
+  }
+
   if (!supabase) {
     return joinLocalRoomByCode(normalizedCode, normalizedName)
   }
@@ -382,6 +433,11 @@ export async function joinRoomByCode(roomCode: string, playerName: string): Prom
 }
 
 export async function listPlayers(roomId: string): Promise<RoomPlayer[]> {
+  if (hasBackendConfig) {
+    const response = await backendRequest<{ players: RoomPlayer[] }>(`/rooms/${roomId}/players`)
+    return response.players
+  }
+
   if (!supabase) {
     return listLocalPlayers(roomId)
   }
@@ -414,6 +470,11 @@ export async function listPlayers(roomId: string): Promise<RoomPlayer[]> {
 }
 
 export async function startRoom(roomId: string): Promise<void> {
+  if (hasBackendConfig) {
+    await backendRequest<{ ok: boolean }>(`/rooms/${roomId}/start`, { method: 'POST' })
+    return
+  }
+
   if (!supabase) {
     startLocalRoom(roomId)
     return
@@ -437,6 +498,11 @@ export async function startRoom(roomId: string): Promise<void> {
 }
 
 export async function getRoomStatus(roomId: string): Promise<RoomSession['status']> {
+  if (hasBackendConfig) {
+    const response = await backendRequest<{ status: RoomSession['status'] }>(`/rooms/${roomId}/status`)
+    return response.status
+  }
+
   if (!supabase) {
     return getLocalRoomStatus(roomId)
   }
@@ -462,6 +528,14 @@ export async function getRoomStatus(roomId: string): Promise<RoomSession['status
 }
 
 export async function saveProgress(payload: PlayerProgressPayload): Promise<void> {
+  if (hasBackendConfig) {
+    await backendRequest<{ ok: boolean }>('/progress/save', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+    return
+  }
+
   if (!supabase) {
     saveLocalProgress(payload)
     return
