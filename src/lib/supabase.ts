@@ -4,8 +4,27 @@ import type { PlayerProgressPayload, RoomPlayer, RoomSession } from '../types/ga
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+const SUPABASE_REQUEST_TIMEOUT_MS = 12000
 
 const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey)
+
+function withTimeout<T>(promiseLike: PromiseLike<T>, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      reject(new Error(`Tiempo de espera agotado al ${label}. Revisa VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY y politicas RLS.`))
+    }, SUPABASE_REQUEST_TIMEOUT_MS)
+
+    Promise.resolve(promiseLike)
+      .then((value) => {
+        window.clearTimeout(timeout)
+        resolve(value)
+      })
+      .catch((error) => {
+        window.clearTimeout(timeout)
+        reject(error)
+      })
+  })
+}
 
 const supabase = hasSupabaseConfig
   ? createClient(supabaseUrl!, supabaseAnonKey!, {
@@ -88,32 +107,38 @@ export async function createRoomWithHost(hostName: string): Promise<{
 
   const roomCode = generateRoomCode()
 
-  const { data: roomData, error: roomError } = await supabase
-    .from('rooms')
-    .insert({
-      room_code: roomCode,
-      host_name: normalizedHost,
-      status: 'waiting',
-    })
-    .select('room_id, room_code, status')
-    .single()
+  const { data: roomData, error: roomError } = await withTimeout(
+    supabase
+      .from('rooms')
+      .insert({
+        room_code: roomCode,
+        host_name: normalizedHost,
+        status: 'waiting',
+      })
+      .select('room_id, room_code, status')
+      .single(),
+    'crear la sala en Supabase',
+  )
 
   if (roomError || !roomData) {
     throw new Error(roomError?.message || 'No fue posible crear la sala.')
   }
 
-  const { data: playerData, error: playerError } = await supabase
-    .from('players')
-    .insert({
-      room_id: roomData.room_id,
-      player_name: normalizedHost,
-      is_host: true,
-      current_level: 0,
-      score: 0,
-      completed: false,
-    })
-    .select('player_id, player_name, is_host, current_level, score, completed')
-    .single()
+  const { data: playerData, error: playerError } = await withTimeout(
+    supabase
+      .from('players')
+      .insert({
+        room_id: roomData.room_id,
+        player_name: normalizedHost,
+        is_host: true,
+        current_level: 0,
+        score: 0,
+        completed: false,
+      })
+      .select('player_id, player_name, is_host, current_level, score, completed')
+      .single(),
+    'registrar al anfitrion en Supabase',
+  )
 
   if (playerError || !playerData) {
     throw new Error(playerError?.message || 'No fue posible registrar al anfitrion.')
@@ -181,11 +206,14 @@ export async function joinRoomByCode(roomCode: string, playerName: string): Prom
     }
   }
 
-  const { data: roomData, error: roomError } = await supabase
-    .from('rooms')
-    .select('room_id, room_code, status')
-    .eq('room_code', normalizedCode)
-    .single()
+  const { data: roomData, error: roomError } = await withTimeout(
+    supabase
+      .from('rooms')
+      .select('room_id, room_code, status')
+      .eq('room_code', normalizedCode)
+      .single(),
+    'consultar la sala en Supabase',
+  )
 
   if (roomError || !roomData) {
     throw new Error('No se encontro la sala.')
@@ -195,18 +223,21 @@ export async function joinRoomByCode(roomCode: string, playerName: string): Prom
     throw new Error('La sala ya no esta disponible.')
   }
 
-  const { data: playerData, error: playerError } = await supabase
-    .from('players')
-    .insert({
-      room_id: roomData.room_id,
-      player_name: normalizedName,
-      is_host: false,
-      current_level: 0,
-      score: 0,
-      completed: false,
-    })
-    .select('player_id, player_name, is_host, current_level, score, completed')
-    .single()
+  const { data: playerData, error: playerError } = await withTimeout(
+    supabase
+      .from('players')
+      .insert({
+        room_id: roomData.room_id,
+        player_name: normalizedName,
+        is_host: false,
+        current_level: 0,
+        score: 0,
+        completed: false,
+      })
+      .select('player_id, player_name, is_host, current_level, score, completed')
+      .single(),
+    'registrar jugador en Supabase',
+  )
 
   if (playerError || !playerData) {
     throw new Error(playerError?.message || 'No fue posible unir al jugador.')
@@ -244,11 +275,14 @@ export async function listPlayers(roomId: string): Promise<RoomPlayer[]> {
       }))
   }
 
-  const { data, error } = await supabase
-    .from('players')
-    .select('player_id, player_name, is_host, current_level, score, completed')
-    .eq('room_id', roomId)
-    .order('joined_at', { ascending: true })
+  const { data, error } = await withTimeout(
+    supabase
+      .from('players')
+      .select('player_id, player_name, is_host, current_level, score, completed')
+      .eq('room_id', roomId)
+      .order('joined_at', { ascending: true }),
+    'listar jugadores en Supabase',
+  )
 
   if (error || !data) {
     throw new Error(error?.message || 'No fue posible listar jugadores.')
@@ -277,10 +311,13 @@ export async function startRoom(roomId: string): Promise<void> {
     return
   }
 
-  const { error } = await supabase
-    .from('rooms')
-    .update({ status: 'in_progress', started_at: new Date().toISOString() })
-    .eq('room_id', roomId)
+  const { error } = await withTimeout(
+    supabase
+      .from('rooms')
+      .update({ status: 'in_progress', started_at: new Date().toISOString() })
+      .eq('room_id', roomId),
+    'iniciar la sala en Supabase',
+  )
 
   if (error) {
     throw new Error(error.message)
@@ -297,11 +334,14 @@ export async function getRoomStatus(roomId: string): Promise<RoomSession['status
     return room.status
   }
 
-  const { data, error } = await supabase
-    .from('rooms')
-    .select('status')
-    .eq('room_id', roomId)
-    .single()
+  const { data, error } = await withTimeout(
+    supabase
+      .from('rooms')
+      .select('status')
+      .eq('room_id', roomId)
+      .single(),
+    'consultar estado de sala en Supabase',
+  )
 
   if (error || !data) {
     throw new Error(error?.message || 'No fue posible consultar la sala.')
@@ -341,48 +381,57 @@ export async function saveProgress(payload: PlayerProgressPayload): Promise<void
 
   const levelStatus = payload.levelStatus
 
-  const { error } = await supabase.from('player_progress').upsert(
-    {
-      player_id: payload.playerId,
-      room_id: payload.roomId,
-      story_seen: payload.currentLevel >= 0,
-      reading_seen: payload.currentLevel >= 1,
-      level_1_status: levelStatus[1],
-      level_2_status: levelStatus[2],
-      level_3_status: levelStatus[3],
-      level_4_status: levelStatus[4],
-      key_fragments: payload.keyFragments,
-      final_code: payload.completed ? payload.keyFragments.join('-') : null,
-      score: payload.score,
-      elapsed_seconds: payload.elapsedSeconds,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'player_id,room_id' },
+  const { error } = await withTimeout(
+    supabase.from('player_progress').upsert(
+      {
+        player_id: payload.playerId,
+        room_id: payload.roomId,
+        story_seen: payload.currentLevel >= 0,
+        reading_seen: payload.currentLevel >= 1,
+        level_1_status: levelStatus[1],
+        level_2_status: levelStatus[2],
+        level_3_status: levelStatus[3],
+        level_4_status: levelStatus[4],
+        key_fragments: payload.keyFragments,
+        final_code: payload.completed ? payload.keyFragments.join('-') : null,
+        score: payload.score,
+        elapsed_seconds: payload.elapsedSeconds,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'player_id,room_id' },
+    ),
+    'guardar progreso en Supabase',
   )
 
   if (error) {
     throw new Error(error.message)
   }
 
-  const { error: playerError } = await supabase
-    .from('players')
-    .update({
-      current_level: payload.currentLevel,
-      score: payload.score,
-      completed: payload.completed,
-      last_active_at: new Date().toISOString(),
-    })
-    .eq('player_id', payload.playerId)
+  const { error: playerError } = await withTimeout(
+    supabase
+      .from('players')
+      .update({
+        current_level: payload.currentLevel,
+        score: payload.score,
+        completed: payload.completed,
+        last_active_at: new Date().toISOString(),
+      })
+      .eq('player_id', payload.playerId),
+    'actualizar jugador en Supabase',
+  )
 
   if (playerError) {
     throw new Error(playerError.message)
   }
 
   if (payload.completed) {
-    const { error: roomError } = await supabase
-      .from('rooms')
-      .update({ status: 'finished', finished_at: new Date().toISOString() })
-      .eq('room_id', payload.roomId)
+    const { error: roomError } = await withTimeout(
+      supabase
+        .from('rooms')
+        .update({ status: 'finished', finished_at: new Date().toISOString() })
+        .eq('room_id', payload.roomId),
+      'cerrar sala en Supabase',
+    )
 
     if (roomError) {
       throw new Error(roomError.message)
