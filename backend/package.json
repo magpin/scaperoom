@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js"
+    "build": "node scripts/build-frontend.js && tsc -p tsconfig.json",
+    "start": "node server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",

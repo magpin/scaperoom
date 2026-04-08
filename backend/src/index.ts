@@ -4,6 +4,9 @@ import cors from 'cors'
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import { createClient } from '@supabase/supabase-js'
+import { existsSync } from 'fs'
+import { dirname, join, resolve } from 'path'
+import { fileURLToPath } from 'url'
 
 type RoomStatus = 'waiting' | 'in_progress' | 'finished'
 
@@ -11,6 +14,15 @@ const port = Number(process.env.PORT ?? 4000)
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173'
+const currentDir = dirname(fileURLToPath(import.meta.url))
+
+const staticDirCandidates = [
+  process.env.FRONTEND_DIST_PATH,
+  resolve(currentDir, '../public'),
+  resolve(currentDir, '../../frontend/dist'),
+].filter((dir): dir is string => Boolean(dir))
+
+const staticDir = staticDirCandidates.find((dir) => existsSync(join(dir, 'index.html')))
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in backend environment')
@@ -361,6 +373,18 @@ io.on('connection', (socket) => {
   })
 })
 
+if (staticDir) {
+  app.use(express.static(staticDir))
+
+  app.get('/favicon.ico', (_req, res) => {
+    res.status(204).end()
+  })
+
+  app.get('*', (_req, res) => {
+    res.sendFile(join(staticDir, 'index.html'))
+  })
+}
+
 httpServer.listen(port, () => {
-  console.log(`Backend running on port ${port}`)
+  console.log(`Backend running on port ${port}${staticDir ? ` with static dir ${staticDir}` : ''}`)
 })
